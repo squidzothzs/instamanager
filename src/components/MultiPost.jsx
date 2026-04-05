@@ -1,19 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Send, Image as ImageIcon } from 'lucide-react';
+import { Send } from 'lucide-react';
 
 function MultiPost() {
   const [accounts, setAccounts] = useState([]);
   const [selectedAccounts, setSelectedAccounts] = useState([]);
   const [caption, setCaption] = useState('');
-  const [videoUrl, setVideoUrl] = useState(''); // Use URL for demo simplicity
+  const [videoUrl, setVideoUrl] = useState('');
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const userId = localStorage.getItem('ig_user_id');
-    if (userId) {
-      axios.get(`/_/backend/accounts?user_id=${userId}`)
+    const workspaceId = localStorage.getItem('workspace_id');
+    if (workspaceId) {
+      axios.get(`/_/backend/workspace/${workspaceId}/accounts`)
         .then(res => setAccounts(res.data.accounts || []))
         .catch(err => console.error(err));
     }
@@ -35,16 +35,14 @@ function MultiPost() {
     setStatus('Publishing to selected accounts...');
     
     try {
-      const userId = localStorage.getItem('fb_user_id');
       const payload = {
-        user_id: userId,
         account_ids: selectedAccounts,
         caption: caption,
         video_url: videoUrl
       };
 
       const res = await axios.post('/_/backend/post', payload);
-      setStatus(`Success! Published to ${res.data.success_count} accounts.`);
+      setStatus(`Success! Published to ${res.data.success_count}/${res.data.total} accounts.`);
     } catch (err) {
       console.error(err);
       setStatus('Failed to publish post. Check backend logs.');
@@ -64,7 +62,7 @@ function MultiPost() {
         {/* Left Col: Account Selection */}
         <div className="glass-panel" style={{ padding: '24px' }}>
           <h3 style={{ marginBottom: '16px', fontSize: '18px' }}>Select Accounts</h3>
-          {accounts.length === 0 ? <p className="text-muted">No accounts available.</p> : (
+          {accounts.length === 0 ? <p className="text-muted">No accounts linked. Add accounts from Dashboard first.</p> : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {accounts.map(acc => (
                 <label key={acc.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
