@@ -13,7 +13,7 @@ function MultiPost() {
   useEffect(() => {
     const userId = localStorage.getItem('ig_user_id');
     if (userId) {
-      axios.get(`/api/accounts?user_id=${userId}`)
+      axios.get(`/_/backend/accounts?user_id=${userId}`)
         .then(res => setAccounts(res.data.accounts || []))
         .catch(err => console.error(err));
     }
@@ -43,7 +43,7 @@ function MultiPost() {
         video_url: videoUrl
       };
 
-      const res = await axios.post('/api/post', payload);
+      const res = await axios.post('/_/backend/post', payload);
       setStatus(`Success! Published to ${res.data.success_count} accounts.`);
     } catch (err) {
       console.error(err);

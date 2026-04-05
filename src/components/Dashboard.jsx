@@ -22,7 +22,7 @@ function Dashboard() {
 
   const fetchAccounts = async (userId) => {
     try {
-      const res = await axios.get(`/api/accounts?user_id=${userId}`);
+      const res = await axios.get(`/_/backend/accounts?user_id=${userId}`);
       setAccounts(res.data.accounts || []);
       setLoading(false);
     } catch (err) {
