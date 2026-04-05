@@ -16,7 +16,7 @@ const IG_GRAPH_API = 'https://graph.instagram.com/v21.0';
 // 1. OAUTH ROUTES
 // ===============
 
-app.get('/_/backend/auth/instagram', (req, res) => {
+app.get(['/auth/instagram', '/_/backend/auth/instagram'], (req, res) => {
     const stringifiedParams = qs.stringify({
         client_id: process.env.INSTAGRAM_APP_ID,
         redirect_uri: process.env.INSTAGRAM_REDIRECT_URI,
@@ -29,7 +29,7 @@ app.get('/_/backend/auth/instagram', (req, res) => {
     res.json({ url: installUrl });
 });
 
-app.post('/_/backend/auth/instagram/callback', async (req, res) => {
+app.post(['/auth/instagram/callback', '/_/backend/auth/instagram/callback'], async (req, res) => {
     const { code } = req.body;
     if (!code) return res.status(400).send('No code provided');
 
@@ -70,7 +70,7 @@ app.post('/_/backend/auth/instagram/callback', async (req, res) => {
 // 2. DASHBOARD / DATA ROUTES
 // ===============
 
-app.get('/_/backend/accounts', async (req, res) => {
+app.get(['/accounts', '/_/backend/accounts'], async (req, res) => {
     const userId = req.query.user_id;
     if (!userId) return res.status(400).json({ error: "Missing user_id parameter" });
 
@@ -92,7 +92,7 @@ app.get('/_/backend/accounts', async (req, res) => {
     }
 });
 
-app.post('/_/backend/post', async (req, res) => {
+app.post(['/post', '/_/backend/post'], async (req, res) => {
     const { user_id, account_ids, caption, video_url } = req.body;
     if (!user_id || !video_url) return res.status(400).json({ error: "Missing parameters" });
 
