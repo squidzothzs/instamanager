@@ -59,7 +59,7 @@ function Login() {
     
     if (code) {
       setStatus('Exchanging token...');
-      fetch('/api/auth/instagram/callback', {
+      fetch('/_/backend/auth/instagram/callback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code })
@@ -82,7 +82,7 @@ function Login() {
 
   const handleLogin = async () => {
     try {
-      const response = await fetch('/api/auth/instagram');
+      const response = await fetch('/_/backend/auth/instagram');
       const data = await response.json();
       window.location.href = data.url; // Redirect to Instagram Auth
     } catch (err) {
