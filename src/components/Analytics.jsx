@@ -23,25 +23,33 @@ function MediaTypeIcon({ type }) {
   return <Image size={12} />;
 }
 
+function getTypeLabel(productType, mediaType) {
+  if (productType === 'REELS') return 'Reel';
+  if (mediaType === 'CAROUSEL_ALBUM') return 'Carousel';
+  if (mediaType === 'VIDEO') return 'Video';
+  return 'Photo';
+}
+
 function PostCard({ post }) {
   const m = post.metrics;
   const date = new Date(post.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  const isVideo = post.media_type === 'VIDEO';
+  const isReel = post.media_product_type === 'REELS';
+  const typeLabel = getTypeLabel(post.media_product_type, post.media_type);
 
   return (
-    <a href={post.permalink} target="_blank" rel="noopener noreferrer" className="reel-card glass-panel">
+    <a href={post.permalink} target="_blank" rel="noopener noreferrer"
+       className="reel-card glass-panel"
+       style={post.metricsAvailable === false ? { opacity: 0.55 } : {}}>
       <div className="reel-thumb">
         {post.thumbnail_url
           ? <img src={post.thumbnail_url} alt="Post thumbnail" />
           : <div className="reel-thumb-placeholder"><Image size={32} color="var(--text-muted)" /></div>
         }
-        {/* Type badge */}
         <div className="media-type-badge">
           <MediaTypeIcon type={post.media_type} />
-          {post.media_type === 'VIDEO' ? 'Reel' : post.media_type === 'CAROUSEL_ALBUM' ? 'Carousel' : 'Photo'}
+          {typeLabel}
         </div>
-        {/* Play count overlay for videos */}
-        {isVideo && m.plays != null && (
+        {isReel && m.plays != null && (
           <div className="reel-plays">
             <Play size={11} fill="white" />
             {Number(m.plays || 0).toLocaleString()}
@@ -49,6 +57,9 @@ function PostCard({ post }) {
         )}
       </div>
       <div className="reel-info">
+        {post.metricsAvailable === false && (
+          <p style={{ fontSize: '11px', color: '#ff9900', marginBottom: '4px' }}>⚠️ No insights (pre-business account)</p>
+        )}
         <p className="reel-caption">
           {post.caption ? post.caption.slice(0, 80) + (post.caption.length > 80 ? '…' : '') : 'No caption'}
         </p>
@@ -163,9 +174,11 @@ function Analytics() {
         <StatCard icon={Users} label="Followers" value={profile.followers_count} />
         <StatCard icon={Image} label="Total Posts" value={profile.media_count} />
         <StatCard icon={Eye} label="Reach (28d)" value={ins.reach} />
-        <StatCard icon={BarChart2} label="Impressions (28d)" value={ins.impressions} />
+        <StatCard icon={BarChart2} label="Views (28d)" value={ins.views} />
         <StatCard icon={TrendingUp} label="Profile Views (28d)" value={ins.profile_views} />
         <StatCard icon={Users} label="New Followers (28d)" value={ins.follower_count} />
+        <StatCard icon={Heart} label="Interactions (28d)" value={ins.total_interactions} />
+        <StatCard icon={Eye} label="Engaged Accounts (28d)" value={ins.accounts_engaged} />
       </div>
 
       {/* No insights warning */}
