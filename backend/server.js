@@ -79,10 +79,8 @@ app.post(['/auth/instagram/callback', '/_/backend/auth/instagram/callback'], asy
         });
 
         let accessToken = tokenResponse.data.access_token;
-        // Force to string immediately — large IG user IDs (>2^53) lose precision as JS numbers
-        const igUserId = String(tokenResponse.data.user_id);
 
-        // Exchange for long-lived token
+        // Exchange for long-lived token first
         const longTokenRes = await axios.get(`${IG_GRAPH_API}/access_token`, {
             params: {
                 grant_type: 'ig_exchange_token',
@@ -91,6 +89,16 @@ app.post(['/auth/instagram/callback', '/_/backend/auth/instagram/callback'], asy
             }
         });
         accessToken = longTokenRes.data.access_token || accessToken;
+
+        // Get the REAL user ID as a string from /me — avoids JS floating point precision
+        // loss that occurs when token exchange returns user_id as a large JSON number
+        const meRes = await axios.get(`${IG_GRAPH_API}/me`, {
+            params: {
+                access_token: accessToken,
+                fields: 'id,username'
+            }
+        });
+        const igUserId = meRes.data.id; // Always returned as string by Graph API
 
         // Store the token for this user
         await kv.set(`token:${igUserId}`, accessToken);
