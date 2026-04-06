@@ -159,7 +159,7 @@ app.get(['/workspace/:id/accounts', '/_/backend/workspace/:id/accounts'], async 
     }
 });
 
-// Analytics — account insights + recent reels metrics
+// Analytics — account insights + all recent media metrics
 app.get(['/workspace/:id/analytics', '/_/backend/workspace/:id/analytics'], async (req, res) => {
     try {
         const raw = await kv.get(`ws:${req.params.id}`);
@@ -171,89 +171,102 @@ app.get(['/workspace/:id/analytics', '/_/backend/workspace/:id/analytics'], asyn
         for (const userId of workspace.accounts) {
             try {
                 const accessToken = await kv.get(`token:${userId}`);
-                if (!accessToken) continue;
+                if (!accessToken) { console.log(`No token for ${userId}`); continue; }
 
                 // Fetch basic profile
                 const profileRes = await axios.get(`${IG_GRAPH_API}/${userId}`, {
                     params: {
                         access_token: accessToken,
-                        fields: 'id,username,profile_picture_url,followers_count,media_count'
+                        fields: 'id,username,profile_picture_url,followers_count,media_count,biography,website'
                     }
                 });
 
-                // Fetch account-level insights (last 30 days)
+                // Fetch account-level insights
+                // reach/impressions use period=day, profile_views uses period=day too
+                // We use since/until as ISO date strings which Instagram prefers
+                const since = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                const until = new Date().toISOString().split('T')[0];
+
                 let accountInsights = {};
                 try {
                     const insightsRes = await axios.get(`${IG_GRAPH_API}/${userId}/insights`, {
                         params: {
                             access_token: accessToken,
-                            metric: 'reach,impressions,profile_views',
+                            metric: 'reach,impressions,profile_views,follower_count',
                             period: 'day',
-                            since: Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60,
-                            until: Math.floor(Date.now() / 1000)
+                            since: since,
+                            until: until
                         }
                     });
-                    // Sum up each metric over the period
-                    for (const metric of insightsRes.data.data) {
-                        const total = metric.values.reduce((sum, v) => sum + (v.value || 0), 0);
+
+                    for (const metric of (insightsRes.data.data || [])) {
+                        // Sum up day-by-day values
+                        const total = (metric.values || []).reduce((sum, v) => sum + (Number(v.value) || 0), 0);
                         accountInsights[metric.name] = total;
                     }
+                    console.log(`Account insights for ${userId}:`, accountInsights);
                 } catch (insightErr) {
-                    console.error(`Insights error for ${userId}:`, insightErr.response?.data || insightErr.message);
+                    console.error(`Insights error for ${userId}:`, JSON.stringify(insightErr.response?.data || insightErr.message));
                 }
 
-                // Fetch recent media (last 12 reels)
+                // Fetch all recent media (last 24 posts — Reels, images, carousels)
                 const mediaRes = await axios.get(`${IG_GRAPH_API}/${userId}/media`, {
                     params: {
                         access_token: accessToken,
-                        fields: 'id,media_type,thumbnail_url,media_url,caption,timestamp,permalink',
-                        limit: 12
+                        fields: 'id,media_type,thumbnail_url,media_url,caption,timestamp,permalink,like_count,comments_count',
+                        limit: 24
                     }
                 });
 
-                const reels = [];
+                const posts = [];
                 for (const media of (mediaRes.data.data || [])) {
-                    if (media.media_type !== 'VIDEO') continue;
+                    // Pick correct metrics based on media type
+                    const isVideo = media.media_type === 'VIDEO';
+                    const metricList = isVideo
+                        ? 'plays,reach,impressions,likes,comments,shares,saved,total_interactions'
+                        : 'impressions,reach,likes,comments,shares,saved,total_interactions';
+
+                    let metrics = {};
                     try {
                         const mediaInsightsRes = await axios.get(`${IG_GRAPH_API}/${media.id}/insights`, {
                             params: {
                                 access_token: accessToken,
-                                metric: 'plays,reach,likes,comments,shares,saved,total_interactions'
+                                metric: metricList
                             }
                         });
-                        const metrics = {};
-                        for (const m of mediaInsightsRes.data.data) {
-                            metrics[m.name] = m.values?.[0]?.value ?? m.value ?? 0;
+
+                        for (const m of (mediaInsightsRes.data.data || [])) {
+                            // Instagram v21 returns value directly or inside values array
+                            metrics[m.name] = m.value ?? m.values?.[0]?.value ?? 0;
                         }
-                        reels.push({
-                            id: media.id,
-                            thumbnail_url: media.thumbnail_url || media.media_url,
-                            caption: media.caption || '',
-                            timestamp: media.timestamp,
-                            permalink: media.permalink,
-                            metrics
-                        });
                     } catch (mErr) {
-                        console.error(`Media insights error for ${media.id}:`, mErr.response?.data || mErr.message);
-                        reels.push({
-                            id: media.id,
-                            thumbnail_url: media.thumbnail_url || media.media_url,
-                            caption: media.caption || '',
-                            timestamp: media.timestamp,
-                            permalink: media.permalink,
-                            metrics: {}
-                        });
+                        console.error(`Media insights error for ${media.id}:`, JSON.stringify(mErr.response?.data || mErr.message));
+                        // Fall back to basic like/comment counts from the media object
+                        metrics = {
+                            likes: media.like_count || 0,
+                            comments: media.comments_count || 0
+                        };
                     }
+
+                    posts.push({
+                        id: media.id,
+                        media_type: media.media_type,
+                        thumbnail_url: media.thumbnail_url || media.media_url,
+                        caption: media.caption || '',
+                        timestamp: media.timestamp,
+                        permalink: media.permalink,
+                        metrics
+                    });
                 }
 
                 analyticsData.push({
                     profile: profileRes.data,
                     insights: accountInsights,
-                    reels
+                    posts
                 });
 
             } catch (err) {
-                console.error(`Analytics error for ${userId}:`, err.response?.data || err.message);
+                console.error(`Analytics error for ${userId}:`, JSON.stringify(err.response?.data || err.message));
             }
         }
 

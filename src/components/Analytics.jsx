@@ -1,44 +1,64 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { BarChart2, Eye, Heart, MessageCircle, Share2, Bookmark, Play, Users, Image, TrendingUp } from 'lucide-react';
+import { Eye, Heart, MessageCircle, Share2, Bookmark, Play, Users, Image, TrendingUp, Film, BarChart2, RefreshCw } from 'lucide-react';
 
-function StatCard({ icon: Icon, label, value, color }) {
+function StatCard({ icon: Icon, label, value }) {
+  const display = value === undefined || value === null ? '—' : Number(value).toLocaleString();
   return (
-    <div className="stat-card glass-panel">
-      <div className="stat-card-icon" style={{ background: color || 'rgba(255,0,85,0.1)', color: color ? 'white' : 'var(--accent)' }}>
+    <div className="stat-card glass-panel animate-slide-in">
+      <div className="stat-card-icon">
         <Icon size={20} />
       </div>
       <div>
-        <div className="stat-card-value">{typeof value === 'number' ? value.toLocaleString() : (value || '—')}</div>
+        <div className="stat-card-value">{display}</div>
         <div className="stat-card-label">{label}</div>
       </div>
     </div>
   );
 }
 
-function ReelCard({ reel }) {
-  const m = reel.metrics;
-  const date = new Date(reel.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+function MediaTypeIcon({ type }) {
+  if (type === 'VIDEO') return <Film size={12} />;
+  if (type === 'CAROUSEL_ALBUM') return <Image size={12} />;
+  return <Image size={12} />;
+}
+
+function PostCard({ post }) {
+  const m = post.metrics;
+  const date = new Date(post.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const isVideo = post.media_type === 'VIDEO';
 
   return (
-    <a href={reel.permalink} target="_blank" rel="noopener noreferrer" className="reel-card glass-panel">
+    <a href={post.permalink} target="_blank" rel="noopener noreferrer" className="reel-card glass-panel">
       <div className="reel-thumb">
-        {reel.thumbnail_url
-          ? <img src={reel.thumbnail_url} alt="Reel thumbnail" />
-          : <div className="reel-thumb-placeholder"><Play size={32} /></div>
+        {post.thumbnail_url
+          ? <img src={post.thumbnail_url} alt="Post thumbnail" />
+          : <div className="reel-thumb-placeholder"><Image size={32} color="var(--text-muted)" /></div>
         }
-        <div className="reel-plays">
-          <Play size={12} />
-          {(m.plays || 0).toLocaleString()}
+        {/* Type badge */}
+        <div className="media-type-badge">
+          <MediaTypeIcon type={post.media_type} />
+          {post.media_type === 'VIDEO' ? 'Reel' : post.media_type === 'CAROUSEL_ALBUM' ? 'Carousel' : 'Photo'}
         </div>
+        {/* Play count overlay for videos */}
+        {isVideo && m.plays != null && (
+          <div className="reel-plays">
+            <Play size={11} fill="white" />
+            {Number(m.plays || 0).toLocaleString()}
+          </div>
+        )}
       </div>
       <div className="reel-info">
-        <p className="reel-caption">{reel.caption ? reel.caption.slice(0, 80) + (reel.caption.length > 80 ? '…' : '') : 'No caption'}</p>
+        <p className="reel-caption">
+          {post.caption ? post.caption.slice(0, 80) + (post.caption.length > 80 ? '…' : '') : 'No caption'}
+        </p>
         <div className="reel-metrics">
-          <span><Heart size={12} /> {(m.likes || 0).toLocaleString()}</span>
-          <span><MessageCircle size={12} /> {(m.comments || 0).toLocaleString()}</span>
-          <span><Share2 size={12} /> {(m.shares || 0).toLocaleString()}</span>
-          <span><Bookmark size={12} /> {(m.saved || 0).toLocaleString()}</span>
+          {m.impressions != null && <span title="Impressions"><Eye size={12} /> {Number(m.impressions || 0).toLocaleString()}</span>}
+          {m.reach != null && <span title="Reach"><TrendingUp size={12} /> {Number(m.reach || 0).toLocaleString()}</span>}
+          <span title="Likes"><Heart size={12} /> {Number(m.likes || 0).toLocaleString()}</span>
+          <span title="Comments"><MessageCircle size={12} /> {Number(m.comments || 0).toLocaleString()}</span>
+          {m.shares != null && <span title="Shares"><Share2 size={12} /> {Number(m.shares || 0).toLocaleString()}</span>}
+          {m.saved != null && <span title="Saved"><Bookmark size={12} /> {Number(m.saved || 0).toLocaleString()}</span>}
         </div>
         <span className="reel-date">{date}</span>
       </div>
@@ -52,13 +72,15 @@ function Analytics() {
   const [error, setError] = useState(null);
   const [activeAccount, setActiveAccount] = useState(0);
 
-  useEffect(() => {
+  const loadAnalytics = () => {
     const workspaceId = localStorage.getItem('workspace_id');
     if (!workspaceId) {
       setError('No workspace found. Go to Dashboard first.');
       setLoading(false);
       return;
     }
+    setLoading(true);
+    setError(null);
 
     axios.get(`/_/backend/workspace/${workspaceId}/analytics`)
       .then(res => {
@@ -67,19 +89,26 @@ function Analytics() {
       })
       .catch(err => {
         console.error(err);
-        setError('Failed to load analytics. ' + (err.response?.data?.error || ''));
+        setError('Failed to load analytics. ' + (err.response?.data?.error || err.message));
         setLoading(false);
       });
-  }, []);
+  };
+
+  useEffect(() => { loadAnalytics(); }, []);
 
   if (loading) return (
-    <div className="page-header">
-      <p>Fetching analytics — this may take a moment…</p>
-      <div className="spinner" style={{ marginTop: '24px' }}></div>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '80px 0', gap: '16px' }}>
+      <div className="spinner"></div>
+      <p style={{ color: 'var(--text-muted)' }}>Fetching analytics — this may take a moment…</p>
     </div>
   );
 
-  if (error) return <div className="page-header"><p style={{ color: 'var(--accent)' }}>{error}</p></div>;
+  if (error) return (
+    <div className="page-header">
+      <p style={{ color: 'var(--accent)' }}>{error}</p>
+      <button className="secondary-btn" style={{ marginTop: '16px' }} onClick={loadAnalytics}>Try Again</button>
+    </div>
+  );
 
   if (analytics.length === 0) return (
     <div className="page-header">
@@ -88,14 +117,19 @@ function Analytics() {
   );
 
   const current = analytics[activeAccount];
-  const ins = current.insights;
+  const ins = current.insights || {};
   const profile = current.profile;
 
   return (
     <div>
-      <div className="page-header">
-        <h2>Analytics</h2>
-        <p>Performance overview for your linked Instagram accounts.</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h2>Analytics</h2>
+          <p>Performance overview for your linked Instagram accounts.</p>
+        </div>
+        <button className="secondary-btn" onClick={loadAnalytics} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <RefreshCw size={14} /> Refresh
+        </button>
       </div>
 
       {/* Account Tabs */}
@@ -119,7 +153,8 @@ function Analytics() {
         <img src={profile.profile_picture_url || 'https://via.placeholder.com/64'} alt="pfp" className="analytics-avatar" />
         <div>
           <h3 style={{ fontSize: '20px', fontWeight: 700 }}>@{profile.username}</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>Last 30 days overview</p>
+          {profile.biography && <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px', maxWidth: '480px' }}>{profile.biography}</p>}
+          <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '6px' }}>Last 28 days overview</p>
         </div>
       </div>
 
@@ -127,26 +162,37 @@ function Analytics() {
       <div className="stats-grid">
         <StatCard icon={Users} label="Followers" value={profile.followers_count} />
         <StatCard icon={Image} label="Total Posts" value={profile.media_count} />
-        <StatCard icon={Eye} label="Reach (30d)" value={ins.reach} />
-        <StatCard icon={TrendingUp} label="Impressions (30d)" value={ins.impressions} />
-        <StatCard icon={BarChart2} label="Profile Views (30d)" value={ins.profile_views} />
+        <StatCard icon={Eye} label="Reach (28d)" value={ins.reach} />
+        <StatCard icon={BarChart2} label="Impressions (28d)" value={ins.impressions} />
+        <StatCard icon={TrendingUp} label="Profile Views (28d)" value={ins.profile_views} />
+        <StatCard icon={Users} label="New Followers (28d)" value={ins.follower_count} />
       </div>
 
-      {/* Reels Performance */}
+      {/* No insights warning */}
+      {Object.keys(ins).length === 0 && (
+        <div style={{ padding: '16px', background: 'rgba(255,200,0,0.08)', border: '1px solid rgba(255,200,0,0.2)', borderRadius: '8px', margin: '16px 0', fontSize: '13px', color: '#ffcc00' }}>
+          ⚠️ Account-level insights unavailable. This can happen if the account was recently added or if your Meta App doesn't have <code>instagram_business_manage_insights</code> approved. Individual post metrics below may still work.
+        </div>
+      )}
+
+      {/* Posts/Reels Grid */}
       <div style={{ marginTop: '40px' }}>
         <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '20px' }}>
-          Recent Reels Performance
+          Recent Posts & Reels
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '10px' }}>
+            ({current.posts?.length || 0} posts)
+          </span>
         </h3>
-        {current.reels.length === 0 ? (
+        {(!current.posts || current.posts.length === 0) ? (
           <div className="glass-panel empty-state">
             <Play size={40} color="var(--text-muted)" />
-            <h3>No Reels found</h3>
-            <p>Post your first Reel to see performance data here.</p>
+            <h3>No posts found</h3>
+            <p>Post content to your Instagram account to see performance data here.</p>
           </div>
         ) : (
           <div className="reels-grid">
-            {current.reels.map(reel => (
-              <ReelCard key={reel.id} reel={reel} />
+            {current.posts.map(post => (
+              <PostCard key={post.id} post={post} />
             ))}
           </div>
         )}
