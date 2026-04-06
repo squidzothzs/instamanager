@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Send, Settings, Camera } from 'lucide-react';
+import { LayoutDashboard, Send, Settings, Camera, BarChart2 } from 'lucide-react';
 import './index.css';
 import './App.css';
 import Dashboard from './components/Dashboard';
 import MultiPost from './components/MultiPost';
+import Analytics from './components/Analytics';
 
 // Generate or retrieve workspace ID
 function getWorkspaceId() {
@@ -23,6 +24,7 @@ function Sidebar() {
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+    { name: 'Analytics', path: '/analytics', icon: BarChart2 },
     { name: 'Post to All', path: '/post', icon: Send },
     { name: 'Settings', path: '/settings', icon: Settings },
   ];
@@ -118,6 +120,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<Layout><Dashboard /></Layout>} />
+        <Route path="/analytics" element={<Layout><Analytics /></Layout>} />
         <Route path="/post/*" element={<Layout><MultiPost /></Layout>} />
         <Route path="/callback" element={<OAuthCallback />} />
         <Route path="/settings" element={<Layout><div className="page-header"><h2>Settings</h2><p>Coming soon.</p></div></Layout>} />

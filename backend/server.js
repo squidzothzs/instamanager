@@ -150,6 +150,111 @@ app.get(['/workspace/:id/accounts', '/_/backend/workspace/:id/accounts'], async 
     }
 });
 
+// Analytics — account insights + recent reels metrics
+app.get(['/workspace/:id/analytics', '/_/backend/workspace/:id/analytics'], async (req, res) => {
+    try {
+        const raw = await kv.get(`ws:${req.params.id}`);
+        if (!raw) return res.status(404).json({ error: "Workspace not found" });
+        const workspace = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+        const analyticsData = [];
+
+        for (const userId of workspace.accounts) {
+            try {
+                const accessToken = await kv.get(`token:${userId}`);
+                if (!accessToken) continue;
+
+                // Fetch basic profile
+                const profileRes = await axios.get(`${IG_GRAPH_API}/${userId}`, {
+                    params: {
+                        access_token: accessToken,
+                        fields: 'id,username,profile_picture_url,followers_count,media_count'
+                    }
+                });
+
+                // Fetch account-level insights (last 30 days)
+                let accountInsights = {};
+                try {
+                    const insightsRes = await axios.get(`${IG_GRAPH_API}/${userId}/insights`, {
+                        params: {
+                            access_token: accessToken,
+                            metric: 'reach,impressions,profile_views',
+                            period: 'day',
+                            since: Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60,
+                            until: Math.floor(Date.now() / 1000)
+                        }
+                    });
+                    // Sum up each metric over the period
+                    for (const metric of insightsRes.data.data) {
+                        const total = metric.values.reduce((sum, v) => sum + (v.value || 0), 0);
+                        accountInsights[metric.name] = total;
+                    }
+                } catch (insightErr) {
+                    console.error(`Insights error for ${userId}:`, insightErr.response?.data || insightErr.message);
+                }
+
+                // Fetch recent media (last 12 reels)
+                const mediaRes = await axios.get(`${IG_GRAPH_API}/${userId}/media`, {
+                    params: {
+                        access_token: accessToken,
+                        fields: 'id,media_type,thumbnail_url,media_url,caption,timestamp,permalink',
+                        limit: 12
+                    }
+                });
+
+                const reels = [];
+                for (const media of (mediaRes.data.data || [])) {
+                    if (media.media_type !== 'VIDEO') continue;
+                    try {
+                        const mediaInsightsRes = await axios.get(`${IG_GRAPH_API}/${media.id}/insights`, {
+                            params: {
+                                access_token: accessToken,
+                                metric: 'plays,reach,likes,comments,shares,saved,total_interactions'
+                            }
+                        });
+                        const metrics = {};
+                        for (const m of mediaInsightsRes.data.data) {
+                            metrics[m.name] = m.values?.[0]?.value ?? m.value ?? 0;
+                        }
+                        reels.push({
+                            id: media.id,
+                            thumbnail_url: media.thumbnail_url || media.media_url,
+                            caption: media.caption || '',
+                            timestamp: media.timestamp,
+                            permalink: media.permalink,
+                            metrics
+                        });
+                    } catch (mErr) {
+                        console.error(`Media insights error for ${media.id}:`, mErr.response?.data || mErr.message);
+                        reels.push({
+                            id: media.id,
+                            thumbnail_url: media.thumbnail_url || media.media_url,
+                            caption: media.caption || '',
+                            timestamp: media.timestamp,
+                            permalink: media.permalink,
+                            metrics: {}
+                        });
+                    }
+                }
+
+                analyticsData.push({
+                    profile: profileRes.data,
+                    insights: accountInsights,
+                    reels
+                });
+
+            } catch (err) {
+                console.error(`Analytics error for ${userId}:`, err.response?.data || err.message);
+            }
+        }
+
+        res.json({ analytics: analyticsData });
+    } catch (err) {
+        console.error("Analytics Route Error:", err.message);
+        res.status(500).json({ error: "Failed to fetch analytics" });
+    }
+});
+
 // Remove an account from a workspace
 app.delete(['/workspace/:id/accounts/:userId', '/_/backend/workspace/:id/accounts/:userId'], async (req, res) => {
     try {
