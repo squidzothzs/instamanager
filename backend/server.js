@@ -79,7 +79,8 @@ app.post(['/auth/instagram/callback', '/_/backend/auth/instagram/callback'], asy
         });
 
         let accessToken = tokenResponse.data.access_token;
-        const igUserId = tokenResponse.data.user_id;
+        // Force to string immediately — large IG user IDs (>2^53) lose precision as JS numbers
+        const igUserId = String(tokenResponse.data.user_id);
 
         // Exchange for long-lived token
         const longTokenRes = await axios.get(`${IG_GRAPH_API}/access_token`, {
