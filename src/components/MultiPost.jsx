@@ -32,7 +32,7 @@ function MultiPost() {
     if (!videoUrl || !caption) return alert('Enter a video URL and caption!');
     
     setLoading(true);
-    setStatus('Publishing to selected accounts...');
+    setStatus('⏳ Uploading to Instagram… this can take 30–60 seconds while Instagram processes the video.');
     
     try {
       const payload = {
@@ -41,11 +41,16 @@ function MultiPost() {
         video_url: videoUrl
       };
 
-      const res = await axios.post('/_/backend/post', payload);
-      setStatus(`Success! Published to ${res.data.success_count}/${res.data.total} accounts.`);
+      const res = await axios.post('/_/backend/post', payload, { timeout: 180000 });
+      if (res.data.success_count > 0) {
+        setStatus(`✅ Successfully published to ${res.data.success_count}/${res.data.total} account(s)!`);
+      } else {
+        const errors = res.data.results?.map(r => r.error).filter(Boolean).join(', ');
+        setStatus(`❌ Failed to publish. Reason: ${errors || 'Unknown error — check Vercel logs.'}`);
+      }
     } catch (err) {
       console.error(err);
-      setStatus('Failed to publish post. Check backend logs.');
+      setStatus('❌ Request failed. The video may have taken too long to process. Try again.');
     }
     setLoading(false);
   };

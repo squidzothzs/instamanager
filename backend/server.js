@@ -185,6 +185,7 @@ app.post(['/post', '/_/backend/post'], async (req, res) => {
                 continue;
             }
 
+            // Step 1: Create the media container
             const containerRes = await axios.post(`${IG_GRAPH_API}/${userId}/media`, null, {
                 params: {
                     access_token: accessToken,
@@ -196,6 +197,33 @@ app.post(['/post', '/_/backend/post'], async (req, res) => {
 
             const creationId = containerRes.data.id;
 
+            // Step 2: Poll until Instagram finishes processing the video (max 2 minutes)
+            let mediaStatus = 'IN_PROGRESS';
+            let attempts = 0;
+            const maxAttempts = 24; // 24 x 5s = 2 minutes
+
+            while (mediaStatus !== 'FINISHED' && attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+                const statusRes = await axios.get(`${IG_GRAPH_API}/${creationId}`, {
+                    params: {
+                        access_token: accessToken,
+                        fields: 'status_code,status'
+                    }
+                });
+                mediaStatus = statusRes.data.status_code;
+                console.log(`[${userId}] Media status (attempt ${attempts + 1}): ${mediaStatus}`);
+
+                if (mediaStatus === 'ERROR') {
+                    throw new Error(`Instagram rejected the video: ${JSON.stringify(statusRes.data.status)}`);
+                }
+                attempts++;
+            }
+
+            if (mediaStatus !== 'FINISHED') {
+                throw new Error('Video processing timed out after 2 minutes.');
+            }
+
+            // Step 3: Publish now that the video is ready
             const publishRes = await axios.post(`${IG_GRAPH_API}/${userId}/media_publish`, null, {
                 params: {
                     creation_id: creationId,
@@ -205,11 +233,11 @@ app.post(['/post', '/_/backend/post'], async (req, res) => {
 
             if (publishRes.data.id) {
                 successCount++;
-                results.push({ userId, success: true });
+                results.push({ userId, success: true, post_id: publishRes.data.id });
             }
         } catch (err) {
             console.error(`Post Error for ${userId}:`, err.response?.data || err.message);
-            results.push({ userId, error: err.response?.data || err.message });
+            results.push({ userId, error: err.response?.data?.error?.message || err.message });
         }
     }
 
