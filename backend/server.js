@@ -310,80 +310,97 @@ app.delete(['/workspace/:id/accounts/:userId', '/_/backend/workspace/:id/account
 });
 
 // Post to specific accounts within a workspace
+// Accepts either:
+//   { account_ids, video_url, caption, is_trial }          — single reel (legacy)
+//   { account_ids, reels: [{video_url, caption}], is_trial } — multiple reels (new)
 app.post(['/post', '/_/backend/post'], async (req, res) => {
-    const { account_ids, caption, video_url } = req.body;
-    if (!account_ids || account_ids.length === 0 || !video_url) {
+    const { account_ids, is_trial } = req.body;
+
+    // Normalise to array of reels regardless of which shape was sent
+    let reels = [];
+    if (req.body.reels && Array.isArray(req.body.reels)) {
+        reels = req.body.reels;
+    } else if (req.body.video_url) {
+        reels = [{ video_url: req.body.video_url, caption: req.body.caption || '' }];
+    }
+
+    if (!account_ids || account_ids.length === 0 || reels.length === 0) {
         return res.status(400).json({ error: "Missing parameters" });
     }
 
     const results = [];
     let successCount = 0;
+    let totalAttempts = 0;
 
-    for (const userId of account_ids) {
-        try {
-            const accessToken = await kv.get(`token:${userId}`);
-            if (!accessToken) {
-                results.push({ userId, error: "No token found" });
-                continue;
-            }
+    for (const reel of reels) {
+        const { video_url, caption } = reel;
 
-            // Step 1: Create the media container
-            const containerRes = await axios.post(`${IG_GRAPH_API}/${userId}/media`, null, {
-                params: {
+        for (const userId of account_ids) {
+            totalAttempts++;
+            try {
+                const accessToken = await kv.get(`token:${userId}`);
+                if (!accessToken) {
+                    results.push({ userId, video_url, error: "No token found" });
+                    continue;
+                }
+
+                // Step 1: Create the media container
+                const containerParams = {
                     access_token: accessToken,
                     media_type: 'REELS',
-                    video_url: video_url,
-                    caption: caption
-                }
-            });
+                    video_url,
+                    caption
+                };
+                // Trial reels are shown to non-followers first; requires sharing_type param
+                // Verify against Meta Graph API docs if this param changes in future versions
+                if (is_trial) containerParams.sharing_type = 'TRIAL';
 
-            const creationId = containerRes.data.id;
-
-            // Step 2: Poll until Instagram finishes processing the video (max 2 minutes)
-            let mediaStatus = 'IN_PROGRESS';
-            let attempts = 0;
-            const maxAttempts = 24; // 24 x 5s = 2 minutes
-
-            while (mediaStatus !== 'FINISHED' && attempts < maxAttempts) {
-                await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-                const statusRes = await axios.get(`${IG_GRAPH_API}/${creationId}`, {
-                    params: {
-                        access_token: accessToken,
-                        fields: 'status_code,status'
-                    }
+                const containerRes = await axios.post(`${IG_GRAPH_API}/${userId}/media`, null, {
+                    params: containerParams
                 });
-                mediaStatus = statusRes.data.status_code;
-                console.log(`[${userId}] Media status (attempt ${attempts + 1}): ${mediaStatus}`);
 
-                if (mediaStatus === 'ERROR') {
-                    throw new Error(`Instagram rejected the video: ${JSON.stringify(statusRes.data.status)}`);
+                const creationId = containerRes.data.id;
+
+                // Step 2: Poll until Instagram finishes processing the video (max 2 minutes)
+                let mediaStatus = 'IN_PROGRESS';
+                let attempts = 0;
+                const maxAttempts = 24; // 24 x 5s = 2 minutes
+
+                while (mediaStatus !== 'FINISHED' && attempts < maxAttempts) {
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    const statusRes = await axios.get(`${IG_GRAPH_API}/${creationId}`, {
+                        params: { access_token: accessToken, fields: 'status_code,status' }
+                    });
+                    mediaStatus = statusRes.data.status_code;
+                    console.log(`[${userId}] Reel (${video_url}) status attempt ${attempts + 1}: ${mediaStatus}`);
+
+                    if (mediaStatus === 'ERROR') {
+                        throw new Error(`Instagram rejected the video: ${JSON.stringify(statusRes.data.status)}`);
+                    }
+                    attempts++;
                 }
-                attempts++;
-            }
 
-            if (mediaStatus !== 'FINISHED') {
-                throw new Error('Video processing timed out after 2 minutes.');
-            }
-
-            // Step 3: Publish now that the video is ready
-            const publishRes = await axios.post(`${IG_GRAPH_API}/${userId}/media_publish`, null, {
-                params: {
-                    creation_id: creationId,
-                    access_token: accessToken
+                if (mediaStatus !== 'FINISHED') {
+                    throw new Error('Video processing timed out after 2 minutes.');
                 }
-            });
 
-            if (publishRes.data.id) {
-                successCount++;
-                results.push({ userId, success: true, post_id: publishRes.data.id });
+                // Step 3: Publish
+                const publishRes = await axios.post(`${IG_GRAPH_API}/${userId}/media_publish`, null, {
+                    params: { creation_id: creationId, access_token: accessToken }
+                });
+
+                if (publishRes.data.id) {
+                    successCount++;
+                    results.push({ userId, video_url, success: true, post_id: publishRes.data.id, is_trial: !!is_trial });
+                }
+            } catch (err) {
+                console.error(`Post Error for ${userId} / ${video_url}:`, err.response?.data || err.message);
+                results.push({ userId, video_url, error: err.response?.data?.error?.message || err.message });
             }
-        } catch (err) {
-            console.error(`Post Error for ${userId}:`, err.response?.data || err.message);
-            results.push({ userId, error: err.response?.data?.error?.message || err.message });
         }
     }
 
-    res.json({ success_count: successCount, total: account_ids.length, results });
+    res.json({ success_count: successCount, total: totalAttempts, results });
 });
 
 const PORT = process.env.PORT || 3000;
