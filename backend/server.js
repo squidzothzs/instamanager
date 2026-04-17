@@ -345,18 +345,18 @@ app.post(['/post', '/_/backend/post'], async (req, res) => {
                 }
 
                 // Step 1: Create the media container
-                const containerParams = {
+                // Send as JSON body (required for trial_params object per Meta docs)
+                const containerBody = {
                     access_token: accessToken,
                     media_type: 'REELS',
                     video_url,
                     caption
                 };
-                // Trial reels are shown to non-followers first before deciding to promote
-                // graduation_strategy: MANUAL = promote via app, SS_PERFORMANCE = auto-promote if strong
-                if (is_trial) containerParams.trial_params = JSON.stringify({ graduation_strategy: 'MANUAL' });
+                // Trial reels shown to non-followers first; graduate manually via native app
+                if (is_trial) containerBody.trial_params = { graduation_strategy: 'MANUAL' };
 
-                const containerRes = await axios.post(`${IG_GRAPH_API}/${userId}/media`, null, {
-                    params: containerParams
+                const containerRes = await axios.post(`${IG_GRAPH_API}/${userId}/media`, containerBody, {
+                    headers: { 'Content-Type': 'application/json' }
                 });
 
                 const creationId = containerRes.data.id;
