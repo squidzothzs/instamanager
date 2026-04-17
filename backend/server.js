@@ -351,9 +351,9 @@ app.post(['/post', '/_/backend/post'], async (req, res) => {
                     video_url,
                     caption
                 };
-                // Trial reels are shown to non-followers first; requires sharing_type param
-                // Verify against Meta Graph API docs if this param changes in future versions
-                if (is_trial) containerParams.sharing_type = 'TRIAL';
+                // Trial reels are shown to non-followers first before deciding to promote
+                // graduation_strategy: MANUAL = promote via app, SS_PERFORMANCE = auto-promote if strong
+                if (is_trial) containerParams.trial_params = JSON.stringify({ graduation_strategy: 'MANUAL' });
 
                 const containerRes = await axios.post(`${IG_GRAPH_API}/${userId}/media`, null, {
                     params: containerParams
